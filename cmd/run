@@ -1,0 +1,2 @@
+--module-path out
+-m work.archaic.peep.example/work.archaic.peep.example.Main

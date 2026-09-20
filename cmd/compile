@@ -1,0 +1,4 @@
+--release 25
+--module-source-path src:lib/src
+--module work.archaic.peep,work.archaic.peep.test,work.archaic.peep.example,work.archaic.service.catalog,work.archaic.minau
+-d out
