@@ -1,0 +1,5 @@
+-ea
+--module-path out
+--add-modules work.archaic.peep.test
+-m work.archaic.minau/work.archaic.minau.Main
+work.archaic.peep.test
