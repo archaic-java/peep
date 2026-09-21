@@ -13,8 +13,8 @@ import work.archaic.service.logging.v01.FailureReport;
 import work.archaic.service.logging.v01.Log;
 
 /**
- * Plain-text output. Each message/report is written and flushed under the destination's lock.
- * The caller owns the destination; this class never closes it. Flush is not a durability promise.
+ * Plain-text stderr output. Each message/report is written and flushed under the stream's lock.
+ * This provider never closes stderr. Flush is not a durability promise.
  */
 public final class TextLog implements Log {
     private final Writer destination;
@@ -30,16 +30,6 @@ public final class TextLog implements Log {
         destination = new OutputStreamWriter(stream, StandardCharsets.UTF_8);
         lock = stream;
         checkedStream = stream;
-    }
-
-    /**
-     * Uses a caller-owned writer. Other users must synchronize on the same writer for coherence.
-     * @param destination output writer; PrintWriter error flags are checked explicitly
-     */
-    public TextLog(Writer destination) {
-        this.destination = Objects.requireNonNull(destination, "destination");
-        lock = destination;
-        checkedStream = null;
     }
 
     @Override
@@ -75,9 +65,6 @@ public final class TextLog implements Log {
             destination.flush();
             if (checkedStream != null && checkedStream.checkError()) {
                 throw new IOException("Standard error rejected log output");
-            }
-            if (destination instanceof PrintWriter printWriter && printWriter.checkError()) {
-                throw new IOException("Writer rejected log output");
             }
         }
     }

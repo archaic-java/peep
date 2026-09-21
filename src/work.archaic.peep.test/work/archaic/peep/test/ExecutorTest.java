@@ -11,7 +11,6 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import work.archaic.peep.Peep;
 import work.archaic.service.logging.v01.GoalProvider;
 import work.archaic.service.test.v01.Test;
 import work.archaic.service.test.v01.TestSuite;
@@ -19,7 +18,7 @@ import static work.archaic.peep.test.Support.*;
 
 public final class ExecutorTest implements TestSuite {
     @Test public void submittedTasksHaveIndependentVirtualExecutions() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var goal = provider.goal("parallel", log);
         try (var executor = goal.executor()) {
@@ -51,7 +50,7 @@ public final class ExecutorTest implements TestSuite {
     }
 
     @Test public void submitOverloadsAndBulkTasksReportInsideFuture() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var failure = new IllegalArgumentException("runnable");
         Runnable broken = () -> { provider.note("runnable"); throw failure; };
@@ -78,7 +77,7 @@ public final class ExecutorTest implements TestSuite {
     }
 
     @Test public void executePreservesUncaughtFailureAfterReporting() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var handled = new CountDownLatch(1);
         var observed = new AtomicReference<Throwable>();
@@ -99,7 +98,7 @@ public final class ExecutorTest implements TestSuite {
     }
 
     @Test public void cancellationReportsActualInterruptionAndCloseWaits() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var started = new CountDownLatch(1);
         var blocker = new CountDownLatch(1);
@@ -129,7 +128,7 @@ public final class ExecutorTest implements TestSuite {
     }
 
     @Test public void timedBulkCancellationAndShutdownNow() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var release = new CountDownLatch(1);
         var started = new CountDownLatch(1);
@@ -157,7 +156,7 @@ public final class ExecutorTest implements TestSuite {
     }
 
     @Test public void dispatchedGoalsDoNotInheritAndExecutorsCloseIndependently() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var goal = provider.goal("root", log);
         var first = goal.executor();

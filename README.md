@@ -7,8 +7,8 @@ It has no SLF4J dependency, logging levels, MDC, reflection or preview-feature r
 ## Use
 
 ```java
-GoalProvider peep = new Peep();
-Log log = new TextLog(); // stderr; or new TextLog(callerOwnedWriter)
+GoalProvider peep = exactlyOne(GoalProvider.class);
+Log log = exactlyOne(Log.class);
 Goal goal = peep.goal("orders.create", log);
 
 log.note("Application started; listening on port 8080");
@@ -18,9 +18,10 @@ Order order = goal.call(() -> {
 });
 ```
 
-Import contracts from `work.archaic.service.logging.v01` and the concrete `Peep`/`TextLog`
-providers from `work.archaic.peep`. Construct providers once at application startup and share
-the selected GoalProvider with participating code. `goal.run(...)` is the void-returning form.
+Import contracts from `work.archaic.service.logging.v01`. Resolve providers once at application
+startup through ServiceLoader (the `exactlyOne` helper is shown below) and share the selected
+GoalProvider with participating code. Peep exports no packages; consumers cannot construct or
+configure implementation classes. Consumer configuration must belong to the catalog contract. `goal.run(...)` is the void-returning form.
 Both synchronous forms use the current thread and preserve checked exception types.
 
 Each invocation has a fresh trail, UUID and timing. Success discards its trail; an escaping
@@ -89,8 +90,8 @@ trace headers are automatically collected.
 
 ## Bounds and output
 
-`new Peep()` retains the latest 256 observations, with at most 2048 UTF-16 code units per
-message. `new Peep(maxEntries, maxMessageCharacters)` sets positive limits. Oldest entries are
+Peep retains the latest 256 observations, with at most 2048 UTF-16 code units per message.
+These are documented implementation defaults, not consumer-configurable settings. Oldest entries are
 evicted, omitted observations counted, and truncated retained messages counted separately.
 Truncation does not split a surrogate pair. Elapsed times use the monotonic clock; wall-clock
 start times and execution UUIDs enable correlation. Successful operations still pay capture
@@ -98,15 +99,16 @@ costs. Bounds cover retained diagnostic messages, not Throwable graphs or incomi
 
 TextLog writes a timestamp for immediate notes and a contiguous failure report with elapsed
 observations, loss counts and the original stack trace. Newlines in messages/names are escaped.
-Writes/flushes serialize on the supplied Writer, or System.err for the default provider. Share
-the same writer when multiple logs target it. Uncoordinated external writers are outside that
-guarantee. TextLog never closes its destination. I/O failures are explicit, including the
-error flags of PrintWriter and the default stderr PrintStream. Flushing does not guarantee
+The service-loaded log writes to System.err and serializes writes/flushes on that stream.
+Uncoordinated external writers are outside that guarantee. The log never closes stderr and
+checks its PrintStream error flag to report I/O failures explicitly. There is no provider-specific
+output destination setting. Applications can supply their own implementation of the catalog
+Log contract when they need another destination. Flushing does not guarantee
 durable storage; there is no retry, file rotation, background queue or crash recovery.
 
 ## JPMS and provider selection
 
-The provider module is `work.archaic.peep`. Consumers may depend only on
+The provider module is `work.archaic.peep` and exports/opens no packages. Consumers depend only on
 `work.archaic.service.catalog` and discover providers with ServiceLoader:
 
 ```java
@@ -120,8 +122,23 @@ module example {
 Peep registers both providers using `provides ... with ...`. Select exactly one provider or
 explicitly choose its type; zero or ambiguous providers are configuration errors. The example
 module demonstrates discovery without depending on Peep's module or implementation classes.
-Explicit construction requires `requires work.archaic.peep` at the application's composition
-boundary; service-facing code can continue to depend on the catalog.
+Public service-provider constructors exist only for ServiceLoader; their package is not
+exported. There are no qualified exports or reflective access overrides for tests.
+
+```java
+private static <T> T exactlyOne(Class<T> service) {
+    var providers = ServiceLoader.load(service).stream().toList();
+    if (providers.size() != 1) {
+        throw new IllegalStateException("Expected one " + service.getName());
+    }
+    return providers.getFirst().get();
+}
+```
+
+Tests also require only the catalog and discover the providers as consumers do. Stderr tests
+run in isolated JVMs so changing a process's stderr does not affect concurrent tests. Boundary
+checks assert that the provider module has no exports or opens. Further configuration requires
+a catalog change first; the current contract remains unchanged.
 
 ## Build and verify
 

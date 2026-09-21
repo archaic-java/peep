@@ -10,7 +10,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
-import work.archaic.peep.Peep;
 import work.archaic.service.logging.v01.GoalProvider;
 import work.archaic.service.test.v01.Test;
 import work.archaic.service.test.v01.TestSuite;
@@ -18,7 +17,7 @@ import static work.archaic.peep.test.Support.*;
 
 public final class HttpTest implements TestSuite {
     @Test public void jdkServerHandlersUseScopedVirtualThreads() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var executor = provider.goal("http.request", log).executor();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -50,7 +49,7 @@ public final class HttpTest implements TestSuite {
     }
 
     @Test public void httpStatusAndServerCaughtExceptionAreNotEscapingTaskFailures() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var executor = provider.goal("http.request", log).executor();
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);

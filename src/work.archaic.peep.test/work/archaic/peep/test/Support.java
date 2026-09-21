@@ -11,6 +11,16 @@ import work.archaic.service.logging.v01.Log;
 final class Support {
     private Support() {}
 
+    static work.archaic.service.logging.v01.GoalProvider provider() {
+        return service(work.archaic.service.logging.v01.GoalProvider.class);
+    }
+
+    static <T> T service(Class<T> type) {
+        var providers = java.util.ServiceLoader.load(type).stream().toList();
+        assert providers.size() == 1 : "Expected exactly one " + type.getName();
+        return providers.getFirst().get();
+    }
+
     static final class MemoryLog implements Log {
         final List<String> notes = new CopyOnWriteArrayList<>();
         final List<FailureReport> reports = new CopyOnWriteArrayList<>();
