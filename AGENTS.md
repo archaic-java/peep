@@ -6,5 +6,6 @@
 - Link sibling service-catalog and Minau module sources under lib/src. See README for pinned revisions.
 - Export/open no provider packages. Consumer configuration must be part of a catalog contract.
 - Test through catalog contracts with Minau, assertions enabled. Keep HTTP integration in tests.
-- Preserve published logging.v01 semantics; no nested/inherited goals or metrics/tracing in this release.
+- Preserve published logging.v01 semantics alongside logging.v02; no nested/inherited goals or metrics/tracing in this release.
 - Do not commit out/ or downloaded dependencies.
+
