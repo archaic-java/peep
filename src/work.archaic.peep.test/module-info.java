@@ -1,5 +1,4 @@
 module work.archaic.peep.test {
-    requires work.archaic.peep;
     requires work.archaic.service.catalog;
     requires jdk.httpserver;
     requires java.net.http;

@@ -13,27 +13,11 @@ import work.archaic.service.logging.v01.Trail;
  */
 public final class Peep implements GoalProvider {
     private final ScopedValue<TrailBuffer> current = ScopedValue.newInstance();
-    private final int maxEntries;
-    private final int maxMessageCharacters;
+    private static final int MAX_ENTRIES = 256;
+    private static final int MAX_MESSAGE_CHARACTERS = 2048;
 
-    /** Keeps the latest 256 observations, each limited to 2048 UTF-16 code units. */
-    public Peep() {
-        this(256, 2048);
-    }
-
-    /**
-     * Configures bounds for retained evidence; construction starts no work.
-     * @param maxEntries positive maximum retained observation count
-     * @param maxMessageCharacters positive maximum UTF-16 code units per message
-     * @throws IllegalArgumentException if either bound is not positive
-     */
-    public Peep(int maxEntries, int maxMessageCharacters) {
-        if (maxEntries <= 0 || maxMessageCharacters <= 0) {
-            throw new IllegalArgumentException("Trail bounds must be positive");
-        }
-        this.maxEntries = maxEntries;
-        this.maxMessageCharacters = maxMessageCharacters;
-    }
+    /** ServiceLoader constructor; retention limits are implementation choices. */
+    public Peep() {}
 
     @Override
     public Goal goal(String name, Log log) {
@@ -67,7 +51,7 @@ public final class Peep implements GoalProvider {
         public <T, X extends Throwable> T call(Operation<T, X> work) throws X {
             Objects.requireNonNull(work, "work");
             if (current.isBound()) throw new IllegalStateException("Nested goals are not supported");
-            var trail = new TrailBuffer(maxEntries, maxMessageCharacters);
+            var trail = new TrailBuffer(MAX_ENTRIES, MAX_MESSAGE_CHARACTERS);
             try {
                 return ScopedValue.where(current, trail).call(work::call);
             } catch (Throwable failure) {

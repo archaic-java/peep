@@ -7,7 +7,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import work.archaic.peep.Peep;
 import work.archaic.service.logging.v01.GoalProvider;
 import work.archaic.service.logging.v01.Log;
 import work.archaic.service.logging.v01.FailureReport;
@@ -22,15 +21,18 @@ public final class GoalTest implements TestSuite {
         var logs = ServiceLoader.load(Log.class).stream().toList();
         assert providers.size() == 1;
         assert logs.size() == 1;
+        var implementation = providers.getFirst().type().getModule();
+        assert implementation.getDescriptor().exports().isEmpty();
+        assert implementation.getDescriptor().opens().isEmpty();
+        assert GoalTest.class.getModule().getDescriptor().requires().stream()
+                .noneMatch(dependency -> dependency.name().equals("work.archaic.peep"));
         GoalProvider provider = providers.getFirst().get();
         provider.goal("loaded", new MemoryLog()).run(() -> provider.note("loaded"));
         assert logs.getFirst().get() != null;
     }
 
     @Test public void validatesCreationAndUnboundAccess() {
-        GoalProvider provider = new Peep();
-        expect(IllegalArgumentException.class, () -> new Peep(0, 1));
-        expect(IllegalArgumentException.class, () -> new Peep(1, 0));
+        GoalProvider provider = provider();
         expect(IllegalArgumentException.class, () -> provider.goal(" ", new MemoryLog()));
         expect(NullPointerException.class, () -> provider.goal(null, new MemoryLog()));
         expect(NullPointerException.class, () -> provider.goal("a", null));
@@ -40,7 +42,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void successDiscardsAndPreservesReturnValue() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var goal = provider.goal("lookup", log);
         var caller = Thread.currentThread();
@@ -58,7 +60,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void failureRetainsEvidenceAndThrowableIdentity() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var goal = provider.goal("lookup", log);
         var failure = new IOException("failed");
@@ -81,7 +83,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void errorsAndInterruptionsArePreserved() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var goal = provider.goal("failure", log);
         var error = new AssertionError("original");
@@ -93,7 +95,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void recoveredFailureIsSuccess() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         provider.goal("retry", log).run(() -> {
             try { throw new IOException("first attempt"); }
@@ -103,7 +105,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void staleAndForeignTrailsAreRejected() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var trail = new AtomicReference<Trail>();
         var goal = provider.goal("scope", new MemoryLog());
         goal.run(() -> {
@@ -125,7 +127,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void nestingIsRejectedBeforeCallback() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         var outer = provider.goal("outer", log);
         var inner = provider.goal("inner", log);
@@ -141,7 +143,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void reportingFailureDoesNotReplaceWorkFailure() {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var outputFailure = new IOException("output unavailable");
         var trail = new AtomicReference<Trail>();
         Log broken = new Log() {
@@ -163,7 +165,7 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void immediateInformationSurvivesSuccessfulGoal() throws Exception {
-        GoalProvider provider = new Peep();
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         log.note("started");
         provider.goal("request", log).run(() -> {
@@ -176,29 +178,31 @@ public final class GoalTest implements TestSuite {
     }
 
     @Test public void boundedEvidenceCountsOnlyRetainedTruncations() {
-        GoalProvider provider = new Peep(2, 3);
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         expect(IOException.class, () -> provider.goal("bounded", log).run(() -> {
-            provider.note("discarded long message");
-            provider.note("abcde");
+            provider.note("x".repeat(2049));
+            for (int i = 0; i < 254; i++) provider.note("filler");
+            provider.note("a".repeat(2049));
             provider.note("ok");
             throw new IOException();
         }));
         var report = log.reports.getFirst();
         assert report.omittedObservations() == 1;
         assert report.truncatedObservations() == 1;
-        assert report.observations().stream().map(o -> o.message()).toList()
-                .equals(java.util.List.of("abc", "ok"));
+        assert report.observations().size() == 256;
+        assert report.observations().get(254).message().equals("a".repeat(2048));
+        assert report.observations().getLast().message().equals("ok");
     }
 
     @Test public void truncationDoesNotSplitSurrogatePairs() {
-        GoalProvider provider = new Peep(1, 1);
+        GoalProvider provider = provider();
         var log = new MemoryLog();
         expect(IOException.class, () -> provider.goal("unicode", log).run(() -> {
-            provider.note("\uD83D\uDE00");
+            provider.note("a".repeat(2047) + "\uD83D\uDE00");
             throw new IOException();
         }));
-        assert log.reports.getFirst().observations().getFirst().message().isEmpty();
+        assert log.reports.getFirst().observations().getFirst().message().equals("a".repeat(2047));
         assert log.reports.getFirst().truncatedObservations() == 1;
     }
 }
