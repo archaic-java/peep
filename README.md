@@ -1,33 +1,36 @@
 # Peep
 
 Goal-scoped diagnostics for Java 25. Peep implements the service catalog's
-`work.archaic.service.logging.v01` contracts using scoped values and virtual threads.
+`work.archaic.service.logging.v02` contracts using scoped values and virtual threads.
 It has no SLF4J dependency, logging levels, MDC, reflection or preview-feature requirement.
 
 ## Use
 
 ```java
-GoalProvider peep = exactlyOne(GoalProvider.class);
+Diagnostics diagnostics = exactlyOne(Diagnostics.class);
 Log log = exactlyOne(Log.class);
-Goal goal = peep.goal("orders.create", log);
+Goal goal = diagnostics.goal("orders.create", log);
 
-log.note("Application started; listening on port 8080");
-Order order = goal.call(() -> {
-    peep.note("Checking inventory");
-    return orders.create();
+log.write("Application started; listening on port 8080");
+goal.run(() -> {
+    diagnostics.note("Checking inventory");
+    Order order = orders.create();
+    respondWithConfirmation(order);
 });
 ```
 
-Import contracts from `work.archaic.service.logging.v01`. Resolve providers once at application
+Import contracts from `work.archaic.service.logging.v02`. Resolve providers once at application
 startup through ServiceLoader (the `exactlyOne` helper is shown below) and share the selected
-GoalProvider with participating code. Peep exports no packages; consumers cannot construct or
-configure implementation classes. Consumer configuration must belong to the catalog contract. `goal.run(...)` is the void-returning form.
-Both synchronous forms use the current thread and preserve checked exception types.
+Diagnostics with participating code. Peep exports no packages; consumers cannot construct or
+configure implementation classes. Consumer configuration must belong to the catalog contract.
+`goal.run(...)` uses the current thread and preserves checked exception types. A goal represents a complete application intent,
+including its response when applicable, and has no result-returning `call` method. Ordinary
+methods inside a goal may still return values.
 
 Each invocation has a fresh trail, UUID and timing. Success discards its trail; an escaping
 Throwable publishes one failure report and propagates the original throwable. Output failures
 are attached as suppressed where possible and never replace the original work failure.
-`log.note(...)` writes and flushes immediate information regardless of any active goal.
+`log.write(...)` writes and flushes immediate information regardless of any active goal.
 There is no static global facade or implicit provider selection.
 
 The same reusable goal may run concurrently. Current-trail access outside its scope, reuse of
@@ -37,16 +40,18 @@ explicitly. Independently dispatched work gets its own root; no goal inheritance
 ## Virtual-thread execution
 
 ```java
-try (var executor = goal.executor()) {
-    var result = executor.submit(() -> {
-        peep.note("Loading customer");
-        return customers.load(customerId);
+try (var executor = goal.newExecutor()) {
+    var completion = executor.submit(() -> {
+        diagnostics.note("Loading customer");
+        respondWithCustomer(customers.load(customerId));
     });
-    return result.get();
+    completion.get();
 }
 ```
 
-Each executor is caller-owned and uses a new virtual thread per task. `execute`, all `submit`
+The executor retains the standard `ExecutorService` contract, including Callable results for
+JDK interoperability; the synchronous Goal API is run-only. Each executor is caller-owned and
+uses a new virtual thread per task. `execute`, all `submit`
 overloads, `invokeAll` and `invokeAny` instrument the actual user work before the JDK captures
 exceptions in futures. Closing waits for termination and does not close the reusable goal,
 other executors, or the log. Rejected or cancelled-before-start tasks run no goal. Cancellation
@@ -62,11 +67,11 @@ FutureTask) are not observable; submit the actual work through Peep's executor m
 ## JDK HTTP server
 
 ```java
-var executor = peep.goal("http.request", log).executor();
+var executor = diagnostics.goal("http.request", log).newExecutor();
 server.setExecutor(executor);
 server.createContext("/orders", exchange -> {
     try (exchange) {
-        peep.note("Loading orders");
+        diagnostics.note("Loading orders");
         byte[] body = loadOrders();
         exchange.sendResponseHeaders(200, body.length);
         try (var output = exchange.getResponseBody()) {
@@ -83,8 +88,11 @@ server.start();
 The executor observes task completion, not HTTP success. The JDK server can catch a handler's
 IOException inside its task; such a failure does not reach the goal. A returned 500 is also
 normal task completion. The integration tests demonstrate both cases against the real JDK
-server, alongside an escaping task failure that is reported. Full HTTP outcome reporting needs
-a future handler/filter adapter and an agreed outcome contract; Peep does not claim it yet.
+server, alongside an escaping task failure that is reported. To observe handler exceptions,
+establish the goal at the handler boundary using `goal.run(...)`
+and give the server an ordinary executor. Do not nest that goal inside a goal executor. Respond
+to a failed intent inside the goal and rethrow its exception; HTTP status codes alone do not
+indicate failure to diagnostics.
 Keep response writing and closing synchronous within the handler. No request metadata or
 trace headers are automatically collected.
 
@@ -97,7 +105,7 @@ Truncation does not split a surrogate pair. Elapsed times use the monotonic cloc
 start times and execution UUIDs enable correlation. Successful operations still pay capture
 costs. Bounds cover retained diagnostic messages, not Throwable graphs or incoming strings.
 
-TextLog writes a timestamp for immediate notes and a contiguous failure report with elapsed
+The v02 TextLog writes a timestamp for immediate notes and a contiguous failure report with elapsed
 observations, loss counts and the original stack trace. Newlines in messages/names are escaped.
 The service-loaded log writes to System.err and serializes writes/flushes on that stream.
 Uncoordinated external writers are outside that guarantee. The log never closes stderr and
@@ -114,12 +122,12 @@ The provider module is `work.archaic.peep` and exports/opens no packages. Consum
 ```java
 module example {
     requires work.archaic.service.catalog;
-    uses work.archaic.service.logging.v01.GoalProvider;
-    uses work.archaic.service.logging.v01.Log;
+    uses work.archaic.service.logging.v02.Diagnostics;
+    uses work.archaic.service.logging.v02.Log;
 }
 ```
 
-Peep registers both providers using `provides ... with ...`. Select exactly one provider or
+Peep registers both v02 providers using `provides ... with ...`. Select exactly one provider or
 explicitly choose its type; zero or ambiguous providers are configuration errors. The example
 module demonstrates discovery without depending on Peep's module or implementation classes.
 Public service-provider constructors exist only for ServiceLoader; their package is not
@@ -142,11 +150,13 @@ a catalog change first; the current contract remains unchanged.
 
 ## Build and verify
 
-Check out sibling repositories, using these tested revisions:
+Check out sibling repositories, using these tested revisions. The catalog revision is supplied
+by [service-catalog PR #3](https://github.com/archaic-java/service-catalog/pull/3), which must land
+before this Peep update:
 
 | Repository | Revision | Role |
 | --- | --- | --- |
-| [service-catalog](https://github.com/archaic-java/service-catalog) | `ad987969d9fac64756e1eb86f7839e80fb2e5dcd` | Production contract |
+| [service-catalog](https://github.com/archaic-java/service-catalog) | `05d0ab690ef1d05161cd881092a8329418751b09` | Production contract |
 | [minau](https://github.com/archaic-java/minau) | `13808cc18f93005fb88f5510d37bd2785a435578` | Tests only |
 
 The checked-in relative links under `lib/src` expect `peep`, `service-catalog` and `minau` in
@@ -163,5 +173,28 @@ with assertions enabled, including catalog-level lifecycle, exception identity, 
 bounded evidence, executor overloads/cancellation, output failures and loopback HTTP checks.
 Production consumers need only Peep and the catalog, not the test runner or example modules.
 
-Metrics/JFR, tracing, child goals and static logging conveniences are deliberately left for
-later work. Existing v01 contracts remain unchanged.
+## Migrating from v01
+
+Peep continues to register its v01 providers for existing consumers. The v01 catalog package and
+its behavior remain unchanged. New code should use `work.archaic.service.logging.v02` throughout
+its imports, custom Log implementations and module `uses` declarations. Versions have separate
+scope state and data types; use one selected Diagnostics instance for each participating group
+of v02 consumers.
+
+| v01 | v02 |
+| --- | --- |
+| `GoalProvider` | `Diagnostics` |
+| `Log.note(String)` | `Log.write(String)` |
+| `Goal.call(Operation)` | Removed; use `run(Action)` around the complete intent |
+| `Goal.executor()` | `Goal.newExecutor()` |
+| `FailureReport.goal()` | `FailureReport.goalName()` |
+
+`Trail.note`, `Diagnostics.note`, `Observation` and `FailureReport` retain their roles.
+Normal completion discards the trail; an escaping exception or error reports failure. Informing
+the user about failure does not turn it into success: rethrow the original failure afterward.
+If the response also fails, attach that failure as suppressed and rethrow the original. Catching
+a failure and returning normally deliberately counts as success. There is no separate outcome
+or completion API. See the catalog's [v02 contract](https://github.com/archaic-java/service-catalog/blob/main/docs/logging-v02.md).
+
+Metrics/JFR, tracing, child goals and static logging conveniences remain future work.
+

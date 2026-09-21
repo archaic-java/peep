@@ -3,32 +3,38 @@ package work.archaic.peep.example;
 import java.io.IOException;
 import java.util.ServiceLoader;
 import java.util.concurrent.ExecutionException;
-import work.archaic.service.logging.v01.GoalProvider;
-import work.archaic.service.logging.v01.Log;
+import work.archaic.service.logging.v02.Diagnostics;
+import work.archaic.service.logging.v02.Log;
 
 /** Service-loaded consumer depending only on the catalog. */
 public final class Main {
     private Main() {}
 
     public static void main(String[] args) throws Exception {
-        GoalProvider provider = exactlyOne(GoalProvider.class);
+        Diagnostics diagnostics = exactlyOne(Diagnostics.class);
         Log log = exactlyOne(Log.class);
-        log.note("Peep example started");
-        var goal = provider.goal("example.operation", log);
-        goal.run(() -> provider.note("Successful evidence is discarded"));
-        try (var executor = goal.executor()) {
+        log.write("Peep example started");
+        var goal = diagnostics.goal("example.fulfill-intent", log);
+        goal.run(() -> diagnostics.note("Successful evidence is discarded"));
+        try (var executor = goal.newExecutor()) {
             var result = executor.submit(() -> {
-                provider.note("Loading configuration");
-                provider.note("Attempting unavailable service");
-                throw new IOException("Demonstration failure");
+                diagnostics.note("Loading configuration");
+                diagnostics.note("Attempting unavailable service");
+                var failure = new IOException("Demonstration failure");
+                try {
+                    log.write("Could not fulfill the requested intent");
+                } catch (IOException responseFailure) {
+                    failure.addSuppressed(responseFailure);
+                }
+                throw failure;
             });
             try {
                 result.get();
             } catch (ExecutionException expected) {
-                // Failure report has already been published. Caller handles its own outcome.
+                // The response was attempted inside the goal; its failure report is now published.
             }
         }
-        log.note("Peep example finished");
+        log.write("Peep example finished");
     }
 
     private static <T> T exactlyOne(Class<T> service) {
@@ -37,3 +43,4 @@ public final class Main {
         return providers.getFirst().get();
     }
 }
+
