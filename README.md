@@ -173,6 +173,15 @@ with assertions enabled, including catalog-level lifecycle, exception identity, 
 bounded evidence, executor overloads/cancellation, output failures and loopback HTTP checks.
 Production consumers need only Peep and the catalog, not the test runner or example modules.
 
+CI runs these commands with the pinned sibling sources, then downloads the pinned
+[Knit V.1 distribution](https://github.com/archaic-java/knit/releases/tag/V.1)
+and packages only `work.archaic.peep` as a source archive. The archive is available
+as a workflow artifact; a `v*` or `V*` tag also attaches it to a GitHub Release.
+`knit.xml` records JDK 25 as the minimum in the archive manifest. For local
+packaging with Knit installed, run `knit package work.archaic.peep` from this
+repository's root. Packaging does not include the service catalog; consumers
+declare and pin that module separately.
+
 ## Migrating from v01
 
 Peep continues to register its v01 providers for existing consumers. The v01 catalog package and
@@ -197,4 +206,3 @@ a failure and returning normally deliberately counts as success. There is no sep
 or completion API. See the catalog's [v02 contract](https://github.com/archaic-java/service-catalog/blob/main/docs/logging-v02.md).
 
 Metrics/JFR, tracing, child goals and static logging conveniences remain future work.
-

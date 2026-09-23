@@ -1,0 +1,67 @@
+name: Verify and package
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  jdk25:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: peep
+      - uses: actions/checkout@v4
+        with:
+          repository: archaic-java/service-catalog
+          ref: 05d0ab690ef1d05161cd881092a8329418751b09
+          path: service-catalog
+      - uses: actions/checkout@v4
+        with:
+          repository: archaic-java/minau
+          ref: 13808cc18f93005fb88f5510d37bd2785a435578
+          path: minau
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Compile, test, and run example
+        working-directory: peep
+        run: |
+          javac @cmd/compile
+          java @cmd/test
+          java @cmd/run
+      - name: Install pinned Knit distribution
+        run: |
+          curl --fail --location --retry 3 --output knit.tar.gz \
+            https://github.com/archaic-java/knit/releases/download/V.1/knit-9f966e68de4c.tar.gz
+          printf '%s  %s\n' \
+            b88e4c73f9acf67c1f220badd674cef9e68656347c7eafbc993ef23d9ce90b16 \
+            knit.tar.gz | sha256sum --check -
+          tar -xzf knit.tar.gz
+          knit/bin/knit --version
+      - name: Package Peep source module
+        working-directory: peep
+        run: ../knit/bin/knit package work.archaic.peep
+      - uses: actions/upload-artifact@v4
+        with:
+          name: peep-source-module
+          path: peep/dist/*.knit.jar
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/V')
+    needs: jdk25
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: peep-source-module
+      - name: Attach source module to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null ||
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
+          gh release upload "$GITHUB_REF_NAME" ./*.knit.jar --repo "$GITHUB_REPOSITORY" --clobber
